@@ -1,1 +1,92 @@
-
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#090d1d">
+<title>Coin Rush — Arcade Game</title>
+<style>
+:root{color-scheme:dark;--gold:#ffd34e;--cyan:#54e6ff;--pink:#ff4fa3}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080c19;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff}
+body{display:grid;place-items:center;background:radial-gradient(ellipse at 50% 0%,#1b2850 0,#0b1022 48%,#070a14 100%)}
+#game{position:relative;width:min(100vw,480px);height:min(100dvh,850px);overflow:hidden;background:linear-gradient(180deg,#101a39,#090e20 70%,#080c18);box-shadow:0 0 50px #0009;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+.hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;gap:10px;padding:16px;pointer-events:none}
+.pill{background:#101a35cc;border:1px solid #ffffff20;border-radius:14px;padding:8px 12px;font-weight:800;letter-spacing:.4px;box-shadow:0 5px 20px #0004}
+.pill small{display:block;color:#9eafd6;font-size:10px;letter-spacing:1px}
+#score,#coins{font-size:20px}
+#overlay{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:linear-gradient(#07102255,#071022bb)}
+.panel{width:100%;max-width:340px;text-align:center;padding:28px 22px;border:1px solid #ffffff25;border-radius:26px;background:linear-gradient(145deg,#18264bF2,#10172ff2);box-shadow:0 20px 60px #0008}
+.logo{font-size:clamp(38px,10vw,56px);font-weight:1000;line-height:.95;letter-spacing:-2px;color:var(--gold);text-shadow:0 4px 0 #a45c12,0 0 24px #ffc83d55}
+.tag{color:#b9c8e9;margin:14px 0 22px;font-size:14px;line-height:1.5}
+button{border:0;border-radius:15px;padding:14px 24px;font-size:16px;font-weight:900;color:#1b1730;background:linear-gradient(180deg,#ffe78b,#ffbf32);box-shadow:0 5px 0 #b87516;cursor:pointer;width:100%}
+button:active{transform:translateY(3px);box-shadow:0 2px 0 #b87516}
+.hint{font-size:12px;color:#8fa0c7;margin-top:17px;line-height:1.6}
+#pause{position:absolute;right:15px;top:76px;width:42px;height:42px;padding:0;border-radius:13px;background:#101a35cc;color:white;border:1px solid #ffffff30;box-shadow:none;font-size:17px}
+#toast{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);font-weight:1000;font-size:25px;color:var(--gold);text-shadow:0 3px 10px #000;opacity:0;pointer-events:none}
+@media(min-width:600px){#game{height:min(94dvh,850px);border:1px solid #ffffff20;border-radius:28px}}
+</style>
+</head>
+<body>
+<div id="game">
+ <canvas id="c"></canvas>
+ <div class="hud">
+  <div class="pill"><small>SCORE</small><span id="score">0</span></div>
+  <div class="pill"><small>BEST</small><span id="best">0</span></div>
+  <div class="pill"><small>COINS</small><span id="coins">0</span> 🪙</div>
+ </div>
+ <button id="pause" aria-label="Pause">Ⅱ</button>
+ <div id="toast">+1 🪙</div>
+ <div id="overlay">
+  <div class="panel">
+   <div class="logo">COIN<br>RUSH</div>
+   <div class="tag" id="message">Dodge the blocks. Grab the gold. Beat your best score!</div>
+   <button id="start">PLAY NOW</button>
+   <div class="hint">◀ Move left &nbsp; • &nbsp; Move right ▶<br>Use arrow keys, A/D, or swipe on your phone.</div>
+  </div>
+ </div>
+</div>
+<script>
+(()=>{
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const game=document.getElementById('game'),overlay=document.getElementById('overlay');
+const scoreEl=document.getElementById('score'),bestEl=document.getElementById('best'),coinsEl=document.getElementById('coins');
+const message=document.getElementById('message'),startBtn=document.getElementById('start'),pauseBtn=document.getElementById('pause'),toast=document.getElementById('toast');
+let W=0,H=0,dpr=1,mode='ready',score=0,coins=Number(localStorage.getItem('coinRushCoins')||0),best=Number(localStorage.getItem('coinRushBest')||0);
+let player,items=[],particles=[],last=0,spawn=0,speed=260,toastTimer=0;
+const lanes=3;
+function resize(){const r=game.getBoundingClientRect();W=r.width;H=r.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.floor(W*dpr);canvas.height=Math.floor(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);if(player)player.y=H-115;}
+addEventListener('resize',resize);resize();
+function laneX(l){return W*(.22+l*.28)}
+function reset(){score=0;speed=260;spawn=0;items=[];particles=[];player={lane:1,x:laneX(1),y:H-115, target:laneX(1)};scoreEl.textContent='0';coinsEl.textContent=coins;}
+function start(){reset();mode='playing';overlay.style.display='none';pauseBtn.textContent='Ⅱ';last=performance.now();requestAnimationFrame(loop)}
+function end(){mode='over';best=Math.max(best,Math.floor(score));localStorage.setItem('coinRushBest',best);bestEl.textContent=best;message.innerHTML=`Game over! You scored <b>${Math.floor(score)}</b> points and collected <b>${coins}</b> coins in total.`;startBtn.textContent='PLAY AGAIN';overlay.style.display='grid'}
+function move(dir){if(mode!=='playing')return;player.lane=Math.max(0,Math.min(2,player.lane+dir));player.target=laneX(player.lane)}
+function addItem(){const lane=Math.floor(Math.random()*3),coin=Math.random()<.38;items.push({lane,x:laneX(lane),y:-35,coin,r:coin?13:18,passed:false})}
+function burst(x,y,color){for(let i=0;i<12;i++)particles.push({x,y,vx:(Math.random()-.5)*180,vy:(Math.random()-.5)*180,life:.55,color})}
+function draw(){ctx.clearRect(0,0,W,H);
+ // stars
+ for(let i=0;i<45;i++){let x=(i*83)%W,y=((i*137+performance.now()*.018)%H);ctx.fillStyle='#9bbaff55';ctx.fillRect(x,y,2,2)}
+ // road
+ ctx.fillStyle='#0b142b';ctx.beginPath();ctx.moveTo(W*.08,0);ctx.lineTo(W*.92,0);ctx.lineTo(W*.99,H);ctx.lineTo(W*.01,H);ctx.closePath();ctx.fill();
+ ctx.strokeStyle='#26385f';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W*.36,0);ctx.lineTo(W*.36,H);ctx.moveTo(W*.64,0);ctx.lineTo(W*.64,H);ctx.stroke();
+ ctx.strokeStyle='#ffffff18';ctx.setLineDash([18,20]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W*.22,0);ctx.lineTo(W*.22,H);ctx.moveTo(W*.78,0);ctx.lineTo(W*.78,H);ctx.stroke();ctx.setLineDash([]);
+ // floor glow
+ let grd=ctx.createLinearGradient(0,H-180,0,H);grd.addColorStop(0,'#00d9ff00');grd.addColorStop(1,'#00d9ff14');ctx.fillStyle=grd;ctx.fillRect(0,H-180,W,180);
+ for(const it of items){if(it.coin){ctx.save();ctx.shadowColor='#ffd34e';ctx.shadowBlur=18;ctx.fillStyle='#ffd34e';ctx.beginPath();ctx.arc(it.x,it.y,it.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#9a5b13';ctx.font='bold 15px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('$',it.x,it.y+1);ctx.restore()}else{ctx.save();ctx.shadowColor='#ff397d';ctx.shadowBlur=18;let g=ctx.createLinearGradient(it.x-18,it.y-18,it.x+18,it.y+18);g.addColorStop(0,'#ff7a9f');g.addColorStop(1,'#b51250');ctx.fillStyle=g;ctx.beginPath();ctx.roundRect(it.x-17,it.y-17,34,34,8);ctx.fill();ctx.strokeStyle='#ffb2c8';ctx.stroke();ctx.restore()}}
+ if(player){player.x+=(player.target-player.x)*.25;ctx.save();ctx.shadowColor='#53eaff';ctx.shadowBlur=22;ctx.fillStyle='#53eaff';ctx.beginPath();ctx.moveTo(player.x,player.y-22);ctx.lineTo(player.x+19,player.y+17);ctx.lineTo(player.x,player.y+10);ctx.lineTo(player.x-19,player.y+17);ctx.closePath();ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(player.x,player.y-4,5,0,Math.PI*2);ctx.fill();ctx.restore()}
+ for(const p of particles){ctx.globalAlpha=Math.max(0,p.life*2);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}
+}
+function loop(now){if(mode!=='playing')return;const dt=Math.min((now-last)/1000,.04);last=now;score+=dt*10;speed=260+Math.min(score*1.1,260);spawn+=dt;if(spawn>Math.max(.32,.82-score/500)){spawn=0;addItem()}
+ for(let i=items.length-1;i>=0;i--){let it=items[i];it.y+=speed*dt;if(!it.passed&&Math.abs(it.y-player.y)<28&&it.lane===player.lane){it.passed=true;if(it.coin){coins++;coinsEl.textContent=coins;localStorage.setItem('coinRushCoins',coins);burst(it.x,it.y,'#ffd34e');toast.style.opacity=1;toastTimer=.5}else{burst(player.x,player.y,'#ff4f88');draw();end();return}}if(it.y>H+40)items.splice(i,1)}
+ for(let i=particles.length-1;i>=0;i--){let p=particles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)particles.splice(i,1)}
+ scoreEl.textContent=Math.floor(score);bestEl.textContent=best;if(toastTimer>0){toastTimer-=dt;if(toastTimer<=0)toast.style.opacity=0}
+ draw();requestAnimationFrame(loop)}
+startBtn.addEventListener('click',start);
+pauseBtn.addEventListener('click',()=>{if(mode==='playing'){mode='paused';pauseBtn.textContent='▶';message.textContent='Take a breather. Ready when you are.';startBtn.textContent='RESUME';overlay.style.display='grid'}else if(mode==='paused'){mode='playing';overlay.style.display='none';pauseBtn.textContent='Ⅱ';last=performance.now();requestAnimationFrame(loop)}});
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a'){e.preventDefault();move(-1)}if(e.key==='ArrowRight'||e.key.toLowerCase()==='d'){e.preventDefault();move(1)}if(e.key===' '&&mode==='ready')start()});
+let sx=0;game.addEventListener('touchstart',e=>{sx=e.changedTouches[0].clientX},{passive:true});game.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>25)move(dx>0?1:-1)},{passive:true});
+bestEl.textContent=best;coinsEl.textContent=coins;draw();
+})();
+</script>
+</body></html>
